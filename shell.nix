@@ -29,6 +29,13 @@ pkgs.mkShell
       vscodeExtensions = with vscode-extensions; [
         rust-lang.rust-analyzer
         vadimcn.vscode-lldb
+      ] ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
+        {
+          name = "shader";
+          publisher = "slevesque";
+          version = "1.1.5";
+          sha256 = "sha256-Pf37FeQMNlv74f7LMz9+CKscF6UjTZ7ZpcaZFKtX2ZM=";
+        }
       ];
     })
   ];
