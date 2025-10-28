@@ -12,5 +12,5 @@ make
 cd ../../
 git clone --depth 1 https://github.com/glfw/glfw.git glfw
 cd ./glfw
-cmake .
+cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release .
 make
