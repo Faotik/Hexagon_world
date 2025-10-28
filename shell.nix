@@ -4,13 +4,17 @@ pkgs.mkShell
 {
   nativeBuildInputs = with pkgs; [
     cmake
+    gcc
     clang
+    pkg-config
 
     glfw
     #opengl
     libGL
     #wayland
     wayland
+    wayland-scanner
+    libxkbcommon
     #x11
     xorg.libX11
     xorg.libXcursor
