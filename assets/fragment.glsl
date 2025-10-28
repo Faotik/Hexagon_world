@@ -1,6 +1,5 @@
-#version 460 core
+#version 430 core
 
-// Utility: axial <-> cube coordinate conversion for hex grids
 vec3 axial_to_cube(vec2 hex) {
     float x = hex.x;
     float y = hex.y;
