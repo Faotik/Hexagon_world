@@ -56,30 +56,31 @@ vec2 pixel_to_doublewidth(vec2 pixel, float size) {
     return axial_to_doublewidth(axial_pos);
 }
 
-vec2 screen_to_world(vec2 position, float camera_zoom, vec2 camera_target, vec2 camera_offset) {
+vec2 screen_to_world(vec2 position, float camera_zoom, vec2 camera_position, vec2 camera_offset) {
     position.x -= camera_offset.x;
     position.y -= camera_offset.y;
     position.x /= camera_zoom;
     position.y /= camera_zoom;
-    position.x -= -camera_target.x;
-    position.y -= -camera_target.y;
+    position.x -= -camera_position.x;
+    position.y -= -camera_position.y;
 
     return position;
 }
 
-uniform float window_height;
 uniform float camera_zoom;
-uniform vec2 camera_target;
+uniform vec2 camera_position;
 uniform vec2 camera_offset;
 uniform float size;
 
 out vec4 fragColor;
 
+layout(origin_upper_left) in vec4 gl_FragCoord;
+
 void main()
 {
     vec2 cords = gl_FragCoord.xy;
     
-    vec2 world_pos = screen_to_world(vec2(cords.x, window_height - cords.y), camera_zoom, camera_target, camera_offset);
+    vec2 world_pos = screen_to_world(vec2(cords.x, cords.y), camera_zoom, camera_position, camera_offset);
     vec2 hex_pos = pixel_to_doublewidth(world_pos, size);
 
     if (hex_pos.x < 0 || hex_pos.y < 0) {

@@ -23,8 +23,7 @@ pkgs.mkShell
     xorg.libXrandr
 
     #rust
-    rustc
-    cargo
+    rustup
     rustfmt
 
     #VS codium with extensions

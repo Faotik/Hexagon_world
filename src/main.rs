@@ -1,19 +1,47 @@
-use std::array;
+use std::{ffi::CString, fs, ptr};
 
-use raylib::prelude::*;
+use gl::types::GLchar;
+use sdl3::{
+    event::Event,
+    keyboard::Keycode,
+    mouse::MouseButton,
+    video::{GLContext, GLProfile},
+};
 
-const camera_width: i32 = (640.0 * 1.5) as i32;
-const camera_height: i32 = (480.0 * 1.5) as i32;
+const WINDOW_WIDTH: u32 = (640.0 * 1.5) as u32;
+const WINDOW_HEIGHT: u32 = (480.0 * 1.5) as u32;
 
-const world_width: usize = 1000;
-const world_heigth: usize = 1000;
+const WORLD_WIDTH: i32 = 1000;
+const WORLD_HEIGTH: i32 = 1000;
+
+struct Camera2D {
+    offset: (f32, f32),
+    position: (f32, f32),
+    rotation: f32,
+    zoom: f32,
+}
+
+impl Camera2D {
+    fn get_screen_to_world(self: &Self, screen_x: f32, screen_y: f32) -> (f32, f32) {
+        let mut world_x = screen_x;
+        let mut world_y = screen_y;
+        world_x -= self.offset.0;
+        world_y -= self.offset.1;
+        world_x /= self.zoom;
+        world_y /= self.zoom;
+        world_x -= -self.offset.0;
+        world_y -= -self.offset.1;
+
+        (world_x, world_y)
+    }
+}
 
 enum CellType {
     Dirt,
 }
 
 impl CellType {
-    fn get_weidth(cell: &Self) -> i32 {
+    fn get_weight(cell: &Self) -> i32 {
         match cell {
             CellType::Dirt => 1,
         }
@@ -24,102 +52,210 @@ struct Cell {
     cell_type: CellType,
 }
 
-fn generate_world() -> [[Cell; world_width]; world_heigth] {
-    let world: [[Cell; world_width]; world_heigth] = array::from_fn(|_| {
-        array::from_fn(|_| Cell {
-            cell_type: CellType::Dirt,
-        })
-    });
-
-    world
+fn generate_world() -> Vec<Vec<Cell>> {
+    todo!();
 }
 
-fn draw_world(
-    rl: &mut RaylibHandle,
-    thread: &RaylibThread,
-    camera: &Camera2D,
-    shader: &mut Shader,
-    map: &[[Cell; world_width]; world_heigth],
-) {
-    let polygon_radius: f32 = 20.0;
-    let mut offset = 0.0;
+fn compile_shader(src: &str, shader_type: u32) -> Result<u32, String> {
+    unsafe {
+        let shader = gl::CreateShader(shader_type);
+        let c_str = CString::new(src.as_bytes()).unwrap();
+        gl::ShaderSource(shader, 1, &c_str.as_ptr(), ptr::null());
+        gl::CompileShader(shader);
 
-    let window_height_loc = shader.get_shader_location("window_height");
-    let camera_zoom_loc = shader.get_shader_location("camera_zoom");
-    let camera_target_loc = shader.get_shader_location("camera_target");
-    let camera_offset_loc = shader.get_shader_location("camera_offset");
-    let size_loc = shader.get_shader_location("size");
+        let mut success = gl::FALSE as gl::types::GLint;
+        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
 
-    let w = rl.get_screen_width() as f32;
-    shader.set_shader_value(window_height_loc, w);
-    shader.set_shader_value(camera_zoom_loc, camera.zoom);
-    shader.set_shader_value(camera_target_loc, camera.target);
-    shader.set_shader_value(camera_offset_loc, camera.offset);
-    shader.set_shader_value(size_loc, polygon_radius);
+        if success != (gl::TRUE as gl::types::GLint) {
+            let mut len = 0;
+            gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buffer = Vec::with_capacity(len as usize);
+            buffer.set_len((len as usize) - 1);
+            gl::GetShaderInfoLog(shader, len, ptr::null_mut(), buffer.as_mut_ptr() as *mut _);
+            return Err(String::from_utf8_lossy(&buffer).into_owned());
+        }
 
-    let mut d = rl.begin_drawing(thread);
-    d.clear_background(Color::WHITE);
-    {
-        let mut d = d.begin_shader_mode(shader);
-        d.draw_rectangle(0, 0, camera_width, camera_height, Color::BLACK);
+        Ok(shader)
     }
-    d.draw_fps(0, 0);
 }
 
-fn draw_gui(rl: &mut RaylibHandle, thread: &RaylibThread) {
-    let mut d = rl.begin_drawing(thread);
-    d.draw_fps(0, 0);
-}
+fn create_shader_program(vertex_src: &str, fragment_src: &str) -> Result<u32, String> {
+    unsafe {
+        let vertex_shader = compile_shader(vertex_src, gl::VERTEX_SHADER)?;
+        let fragment_shader = compile_shader(fragment_src, gl::FRAGMENT_SHADER)?;
 
-fn handle_input(rl: &mut RaylibHandle, camera: &mut Camera2D) {
-    let mouse_wheel_move = rl.get_mouse_wheel_move();
+        let program = gl::CreateProgram();
+        gl::AttachShader(program, vertex_shader);
+        gl::AttachShader(program, fragment_shader);
+        gl::LinkProgram(program);
 
-    if mouse_wheel_move != 0.0 {
-        let mouser_world_pos = rl.get_screen_to_world2D(rl.get_mouse_position(), *camera);
+        let mut success = gl::FALSE as gl::types::GLint;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
 
-        camera.zoom = (camera.zoom.ln() + mouse_wheel_move * 0.1)
-            .exp()
-            .clamp(0.001, 20.0);
+        if success != (gl::TRUE as gl::types::GLint) {
+            let mut len = 0;
+            gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut len);
+            let mut buffer = Vec::with_capacity(len as usize);
+            buffer.set_len((len as usize) - 1);
+            gl::GetProgramInfoLog(program, len, ptr::null_mut(), buffer.as_mut_ptr() as *mut _);
+            return Err(String::from_utf8_lossy(&buffer).into_owned());
+        }
 
-        let mouser_world_pos2 = rl.get_screen_to_world2D(rl.get_mouse_position(), *camera);
+        gl::DeleteShader(vertex_shader);
+        gl::DeleteShader(fragment_shader);
 
-        camera.target += mouser_world_pos - mouser_world_pos2;
+        Ok(program)
     }
+}
 
-    let mouse_delta = rl.get_mouse_delta() / camera.zoom;
+fn draw(shader_program: u32, camera: &Camera2D) {
+    unsafe {
+        gl::UseProgram(shader_program);
 
-    if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-        camera.target = Vector2::new(
-            camera.target.x - mouse_delta.x,
-            camera.target.y - mouse_delta.y,
+        let camera_zoom_loc =
+            gl::GetUniformLocation(shader_program, b"camera_zoom\0".as_ptr() as *const GLchar);
+        let camera_position_loc = gl::GetUniformLocation(
+            shader_program,
+            b"camera_position\0".as_ptr() as *const GLchar,
         );
+        let camera_offset_loc =
+            gl::GetUniformLocation(shader_program, b"camera_offset\0".as_ptr() as *const GLchar);
+        let size_loc = gl::GetUniformLocation(shader_program, b"size\0".as_ptr() as *const GLchar);
+
+        let size: f32 = 20.0;
+
+        gl::Uniform1f(camera_zoom_loc, camera.zoom);
+        gl::Uniform2f(camera_position_loc, camera.position.0, camera.position.1);
+        gl::Uniform2f(camera_offset_loc, camera.offset.0, camera.offset.1);
+        gl::Uniform1f(size_loc, size);
+
+        gl::ClearColor(1.0, 1.0, 1.0, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+
+        let vertices: [f32; 8] = [-1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0];
+        let indices: [u32; 6] = [0, 1, 2, 2, 3, 0];
+
+        let mut vao = 0;
+        let mut vbo = 0;
+        let mut ebo = 0;
+
+        gl::GenVertexArrays(1, &mut vao);
+        gl::GenBuffers(1, &mut vbo);
+        gl::GenBuffers(1, &mut ebo);
+
+        gl::BindVertexArray(vao);
+
+        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+        gl::BufferData(
+            gl::ARRAY_BUFFER,
+            (vertices.len() * std::mem::size_of::<f32>()) as isize,
+            vertices.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+
+        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+        gl::BufferData(
+            gl::ELEMENT_ARRAY_BUFFER,
+            (indices.len() * std::mem::size_of::<u32>()) as isize,
+            indices.as_ptr() as *const _,
+            gl::STATIC_DRAW,
+        );
+
+        gl::EnableVertexAttribArray(0);
+        gl::VertexAttribPointer(
+            0,
+            2,
+            gl::FLOAT,
+            gl::FALSE,
+            (2 * std::mem::size_of::<f32>()) as i32,
+            std::ptr::null(),
+        );
+
+        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
+
+        gl::BindVertexArray(0);
+        gl::UseProgram(0);
     }
 }
 
-fn main() {
-    // unsafe {
-    //     ffi::SetConfigFlags(ffi::ConfigFlags::FLAG_WINDOW_HIGHDPI as u32);
-    // }
+fn handle_input(sdl_context: &sdl3::Sdl, camera: &mut Camera2D) -> bool {
+    let mut events = sdl_context.event_pump().unwrap();
 
-    let (mut rl, thread) = raylib::init()
-        .size(camera_width, camera_height)
-        .title("Hello, World")
-        .build();
+    for event in events.poll_iter() {
+        match event {
+            Event::Quit { .. }
+            | Event::KeyDown {
+                keycode: Some(Keycode::Escape),
+                ..
+            } => return false,
+            Event::MouseWheel {
+                y,
+                mouse_x,
+                mouse_y,
+                ..
+            } => {
+                let mouse_world_pos = camera.get_screen_to_world(mouse_x, mouse_y);
+
+                camera.zoom = (camera.zoom.ln() + y * 0.1).exp().clamp(0.001, 20.0);
+
+                let mouser_world_pos2 = camera.get_screen_to_world(mouse_x, mouse_y);
+
+                camera.position = (
+                    camera.position.0 + mouse_world_pos.0 - mouser_world_pos2.0,
+                    camera.position.1 + mouse_world_pos.1 - mouser_world_pos2.1,
+                );
+            }
+            Event::MouseMotion {
+                xrel,
+                yrel,
+                mousestate,
+                ..
+            } if mousestate.is_mouse_button_pressed(MouseButton::Left) => {
+                camera.position = (
+                    camera.position.0 - xrel / camera.zoom,
+                    camera.position.1 - yrel / camera.zoom,
+                );
+            }
+            _ => {}
+        }
+    }
+
+    true
+}
+
+pub fn main() {
+    let sdl_context = sdl3::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+
+    let gl_attr = video_subsystem.gl_attr();
+    gl_attr.set_context_profile(GLProfile::Core);
+    gl_attr.set_context_version(4, 6);
+
+    let window = video_subsystem
+        .window("Civilizations", WINDOW_WIDTH, WINDOW_HEIGHT)
+        .opengl()
+        .position_centered()
+        .build()
+        .unwrap();
+
+    let _gl_context: GLContext = window.gl_create_context().unwrap();
+
+    gl::load_with(|s| video_subsystem.gl_get_proc_address(s).unwrap() as *const _);
 
     let mut camera = Camera2D {
-        offset: Vector2::new(camera_width as f32 / 2.0, camera_height as f32 / 2.0),
-        target: Vector2::new(0.0, 0.0),
+        offset: (WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0),
+        position: (0.0, 0.0),
         rotation: 0.0,
         zoom: 1.0,
     };
 
-    let world = generate_world();
+    let vertex_src = fs::read_to_string("./assets/vertex.glsl").unwrap();
+    let fragment_src = fs::read_to_string("./assets/fragment.glsl").unwrap();
 
-    let mut shader: Shader = rl.load_shader(&thread, None, Some("assets/fragment.glsl"));
+    let shader_program = create_shader_program(&vertex_src, &fragment_src).unwrap();
 
-    while !rl.window_should_close() {
-        //draw_gui(&mut rl, &thread);
-        draw_world(&mut rl, &thread, &camera, &mut shader, &world);
-        handle_input(&mut rl, &mut camera);
+    while handle_input(&sdl_context, &mut camera) {
+        draw(shader_program, &camera);
+        window.gl_swap_window();
     }
 }
