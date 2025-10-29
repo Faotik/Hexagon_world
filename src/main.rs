@@ -1,6 +1,7 @@
-use std::{ffi::CString, fs, ptr};
+use std::{ffi::CString, fs, mem, ptr, vec};
 
-use gl::types::GLchar;
+use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
+use noise::Vector4;
 use sdl3::{
     event::Event,
     keyboard::Keycode,
@@ -41,9 +42,15 @@ enum CellType {
 }
 
 impl CellType {
-    fn get_weight(cell: &Self) -> i32 {
-        match cell {
+    fn get_weight(self: &Self) -> i32 {
+        match self {
             CellType::Dirt => 1,
+        }
+    }
+
+    fn get_color(self: &Self) -> (f32, f32, f32) {
+        match self {
+            CellType::Dirt => (0.0, 255.0, 0.0),
         }
     }
 }
@@ -53,7 +60,36 @@ struct Cell {
 }
 
 fn generate_world() -> Vec<Vec<Cell>> {
-    todo!();
+    let mut world: Vec<Vec<Cell>> = vec![];
+
+    for _y in 0..WORLD_HEIGTH {
+        let mut row = Vec::new();
+        for _x in 0..WORLD_WIDTH {
+            row.push(Cell {
+                cell_type: CellType::Dirt,
+            });
+        }
+        world.push(row);
+    }
+
+    world
+}
+
+fn generate_world_colors(map: &Vec<Vec<Cell>>) -> Vec<f32> {
+    let mut colors: Vec<f32> = vec![];
+
+    for y in 0..WORLD_HEIGTH as usize {
+        for x in 0..WORLD_WIDTH as usize {
+            let cell = &map[y][x];
+            let (r, g, b) = cell.cell_type.get_color();
+            colors.push(r);
+            colors.push(g);
+            colors.push(b);
+            colors.push(255.0);
+        }
+    }
+
+    colors
 }
 
 fn compile_shader(src: &str, shader_type: u32) -> Result<u32, String> {
@@ -108,6 +144,25 @@ fn create_shader_program(vertex_src: &str, fragment_src: &str) -> Result<u32, St
     }
 }
 
+fn create_ssbo(data: &Vec<f32>) -> GLuint {
+    unsafe {
+        let mut ssbo: GLuint = 0;
+        gl::GenBuffers(1, &mut ssbo);
+        gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, ssbo);
+
+        gl::BufferData(
+            gl::SHADER_STORAGE_BUFFER,
+            (data.len() * std::mem::size_of::<f32>()) as GLsizeiptr,
+            data.as_ptr() as *const GLvoid,
+            gl::STATIC_DRAW,
+        );
+
+        gl::BindBufferBase(gl::SHADER_STORAGE_BUFFER, 0, ssbo);
+
+        ssbo
+    }
+}
+
 fn draw(shader_program: u32, camera: &Camera2D) {
     unsafe {
         gl::UseProgram(shader_program);
@@ -121,6 +176,10 @@ fn draw(shader_program: u32, camera: &Camera2D) {
         let camera_offset_loc =
             gl::GetUniformLocation(shader_program, b"camera_offset\0".as_ptr() as *const GLchar);
         let size_loc = gl::GetUniformLocation(shader_program, b"size\0".as_ptr() as *const GLchar);
+        let world_height_loc =
+            gl::GetUniformLocation(shader_program, b"world_height\0".as_ptr() as *const GLchar);
+        let world_width_loc =
+            gl::GetUniformLocation(shader_program, b"world_width\0".as_ptr() as *const GLchar);
 
         let size: f32 = 20.0;
 
@@ -128,6 +187,8 @@ fn draw(shader_program: u32, camera: &Camera2D) {
         gl::Uniform2f(camera_position_loc, camera.position.0, camera.position.1);
         gl::Uniform2f(camera_offset_loc, camera.offset.0, camera.offset.1);
         gl::Uniform1f(size_loc, size);
+        gl::Uniform1f(world_height_loc, WORLD_HEIGTH as f32);
+        gl::Uniform1f(world_width_loc, WORLD_WIDTH as f32);
 
         gl::ClearColor(1.0, 1.0, 1.0, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
@@ -253,6 +314,11 @@ pub fn main() {
     let fragment_src = fs::read_to_string("./assets/fragment.glsl").unwrap();
 
     let shader_program = create_shader_program(&vertex_src, &fragment_src).unwrap();
+
+    let world = generate_world();
+    let colors = generate_world_colors(&world);
+
+    create_ssbo(&colors);
 
     while handle_input(&sdl_context, &mut camera) {
         draw(shader_program, &camera);

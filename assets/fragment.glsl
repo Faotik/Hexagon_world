@@ -67,9 +67,15 @@ vec2 screen_to_world(vec2 position, float camera_zoom, vec2 camera_position, vec
     return position;
 }
 
+layout(std430, binding = 0) buffer Data {
+    vec4 colors[];
+};
+
 uniform float camera_zoom;
 uniform vec2 camera_position;
 uniform vec2 camera_offset;
+uniform float world_height;
+uniform float world_width;
 uniform float size;
 
 out vec4 fragColor;
@@ -83,11 +89,12 @@ void main()
     vec2 world_pos = screen_to_world(vec2(cords.x, cords.y), camera_zoom, camera_position, camera_offset);
     vec2 hex_pos = pixel_to_doublewidth(world_pos, size);
 
-    if (hex_pos.x < 0 || hex_pos.y < 0) {
+    hex_pos.x = hex_pos.x / 2.0;
+
+    if (hex_pos.x < 0 || hex_pos.y < 0 || hex_pos.x >= world_width || hex_pos.y >= world_height) {
         discard;
     }
 
-    float color = mod((hex_pos.x * 2.2 + hex_pos.y * 6.3), 1.0);
-    
-    fragColor = vec4(vec3(color, color, color), 1.0);
+    vec4 color = colors[int(hex_pos.x) + int(hex_pos.y) * int(world_width)] / 255.0;
+    fragColor = color;
 }
