@@ -1,7 +1,7 @@
 use std::{ffi::CString, fs, mem, ptr, vec};
 
 use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
-use noise::Vector4;
+use noise::{Fbm, NoiseFn, Perlin, Vector4};
 use sdl3::{
     event::Event,
     keyboard::Keycode,
@@ -39,18 +39,21 @@ impl Camera2D {
 
 enum CellType {
     Dirt,
+    Water,
 }
 
 impl CellType {
     fn get_weight(self: &Self) -> i32 {
         match self {
             CellType::Dirt => 1,
+            CellType::Water => 5,
         }
     }
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Dirt => (0.0, 255.0, 0.0),
+            CellType::Dirt => (20.0, 200.0, 20.0),
+            CellType::Water => (20.0, 20.0, 200.0),
         }
     }
 }
@@ -62,12 +65,21 @@ struct Cell {
 fn generate_world() -> Vec<Vec<Cell>> {
     let mut world: Vec<Vec<Cell>> = vec![];
 
-    for _y in 0..WORLD_HEIGTH {
+    for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
-        for _x in 0..WORLD_WIDTH {
-            row.push(Cell {
-                cell_type: CellType::Dirt,
-            });
+        for x in 0..WORLD_WIDTH {
+            let mut fbm = Fbm::<Perlin>::new(0);
+            fbm.frequency = 0.05;
+            let val = fbm.get([x as f64, y as f64]);
+            if val > 0.0 {
+                row.push(Cell {
+                    cell_type: CellType::Dirt,
+                });
+            } else {
+                row.push(Cell {
+                    cell_type: CellType::Water,
+                });
+            }
         }
         world.push(row);
     }
