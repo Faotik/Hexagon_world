@@ -302,7 +302,7 @@ pub fn main() {
 
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_context_profile(GLProfile::Core);
-    gl_attr.set_context_version(4, 6);
+    gl_attr.set_context_version(4, 3);
 
     let window = video_subsystem
         .window("Civilizations", WINDOW_WIDTH, WINDOW_HEIGHT)
