@@ -313,7 +313,12 @@ pub fn main() {
 
     let _gl_context: GLContext = window.gl_create_context().unwrap();
 
-    gl::load_with(|s| video_subsystem.gl_get_proc_address(s).unwrap() as *const _);
+    gl::load_with(|s| {
+        video_subsystem
+            .gl_get_proc_address(s)
+            .map(|f| f as *const std::ffi::c_void)
+            .unwrap_or(std::ptr::null()) as *const _
+    });
 
     let mut camera = Camera2D {
         offset: (WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0),
