@@ -1,4 +1,9 @@
-use std::{ffi::CString, fs, mem, ptr, vec};
+use std::{
+    ffi::CString,
+    fs, mem, ptr,
+    time::{Instant, SystemTime},
+    vec,
+};
 
 use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
 use noise::{Fbm, NoiseFn, Perlin, Vector4};
@@ -38,22 +43,37 @@ impl Camera2D {
 }
 
 enum CellType {
-    Dirt,
+    Grass,
     Water,
+    MediumWater,
+    DeepWater,
+    Sand,
+    Snow,
+    Mountain,
 }
 
 impl CellType {
     fn get_weight(self: &Self) -> i32 {
         match self {
-            CellType::Dirt => 1,
+            CellType::Grass => 1,
             CellType::Water => 5,
+            CellType::Sand => 2,
+            CellType::Snow => 2,
+            CellType::Mountain => 100,
+            CellType::DeepWater => 20,
+            CellType::MediumWater => 10,
         }
     }
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Dirt => (20.0, 200.0, 20.0),
-            CellType::Water => (20.0, 20.0, 200.0),
+            CellType::Grass => (20.0, 200.0, 20.0),
+            CellType::Water => (20.0, 20.0, 180.0),
+            CellType::Sand => (231.0, 255.0, 133.0),
+            CellType::Snow => (240.0, 240.0, 240.0),
+            CellType::Mountain => (100.0, 100.0, 100.0),
+            CellType::DeepWater => (10.0, 15.0, 30.0),
+            CellType::MediumWater => (22.0, 30.0, 64.0),
         }
     }
 }
@@ -63,26 +83,64 @@ struct Cell {
 }
 
 fn generate_world() -> Vec<Vec<Cell>> {
+    let time = Instant::now();
+
+    let seed = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     let mut world: Vec<Vec<Cell>> = vec![];
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
         for x in 0..WORLD_WIDTH {
-            let mut fbm = Fbm::<Perlin>::new(0);
-            fbm.frequency = 0.05;
-            let val = fbm.get([x as f64, y as f64]);
-            if val > 0.0 {
+            let mut altitude_noise = Fbm::<Perlin>::new(seed as u32);
+            altitude_noise.frequency = 0.005;
+
+            let mut temperature_noise = Fbm::<Perlin>::new(seed as u32);
+            temperature_noise.frequency = 0.0005;
+
+            let altitude = altitude_noise.get([x as f64, y as f64]);
+            let temp = temperature_noise.get([x as f64, y as f64]);
+            // let temp = 0.0;
+
+            if altitude > 0.5 {
                 row.push(Cell {
-                    cell_type: CellType::Dirt,
+                    cell_type: CellType::Mountain,
+                });
+            } else if altitude > 0.0 {
+                if temp > 0.3 {
+                    row.push(Cell {
+                        cell_type: CellType::Sand,
+                    });
+                } else if temp < 0.01 {
+                    row.push(Cell {
+                        cell_type: CellType::Snow,
+                    });
+                } else {
+                    row.push(Cell {
+                        cell_type: CellType::Grass,
+                    });
+                }
+            } else if altitude > -0.05 {
+                row.push(Cell {
+                    cell_type: CellType::Water,
+                });
+            } else if altitude > -0.1 {
+                row.push(Cell {
+                    cell_type: CellType::MediumWater,
                 });
             } else {
                 row.push(Cell {
-                    cell_type: CellType::Water,
+                    cell_type: CellType::DeepWater,
                 });
             }
         }
         world.push(row);
     }
+
+    println!("World generated in: {}s", time.elapsed().as_secs_f32());
 
     world
 }
