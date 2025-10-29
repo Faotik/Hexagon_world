@@ -44,12 +44,16 @@ impl Camera2D {
 
 enum CellType {
     Grass,
+    River,
     Water,
     MediumWater,
     DeepWater,
     Sand,
     Snow,
     Mountain,
+    MediumMountain,
+    HighMountain,
+    Tundra,
 }
 
 impl CellType {
@@ -62,18 +66,26 @@ impl CellType {
             CellType::Mountain => 100,
             CellType::DeepWater => 20,
             CellType::MediumWater => 10,
+            CellType::River => 6,
+            CellType::Tundra => 2,
+            CellType::MediumMountain => 200,
+            CellType::HighMountain => 300,
         }
     }
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Grass => (20.0, 200.0, 20.0),
+            CellType::Grass => (20.0, 160.0, 20.0),
             CellType::Water => (20.0, 20.0, 180.0),
             CellType::Sand => (231.0, 255.0, 133.0),
             CellType::Snow => (240.0, 240.0, 240.0),
             CellType::Mountain => (100.0, 100.0, 100.0),
             CellType::DeepWater => (10.0, 15.0, 30.0),
             CellType::MediumWater => (22.0, 30.0, 64.0),
+            CellType::River => (200.0, 20.0, 20.0),
+            CellType::Tundra => (20.0, 100.0, 20.0),
+            CellType::MediumMountain => (80.0, 80.0, 80.0),
+            CellType::HighMountain => (60.0, 60.0, 60.0),
         }
     }
 }
@@ -92,42 +104,55 @@ fn generate_world() -> Vec<Vec<Cell>> {
 
     let mut world: Vec<Vec<Cell>> = vec![];
 
+    let mut altitude_noise = Fbm::<Perlin>::new(seed as u32);
+    altitude_noise.frequency = 0.5;
+
+    let mut temperature_noise = Fbm::<Perlin>::new(seed as u32 + 1);
+    temperature_noise.frequency = 0.5;
+
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
         for x in 0..WORLD_WIDTH {
-            let mut altitude_noise = Fbm::<Perlin>::new(seed as u32);
-            altitude_noise.frequency = 0.005;
+            let sx = x as f64 * 0.01 as f64;
+            let sy = y as f64 * 0.01 as f64;
+            let altitude = (altitude_noise.get([sx, sy]) + 1.0) / 2.0;
+            let temp = (temperature_noise.get([sx, sy]) + 1.0) / 2.0;
 
-            let mut temperature_noise = Fbm::<Perlin>::new(seed as u32);
-            temperature_noise.frequency = 0.0005;
-
-            let altitude = altitude_noise.get([x as f64, y as f64]);
-            let temp = temperature_noise.get([x as f64, y as f64]);
-            // let temp = 0.0;
-
-            if altitude > 0.5 {
+            if altitude > 0.85 {
+                row.push(Cell {
+                    cell_type: CellType::HighMountain,
+                });
+            } else if altitude > 0.8 {
+                row.push(Cell {
+                    cell_type: CellType::MediumMountain,
+                });
+            } else if altitude > 0.75 {
                 row.push(Cell {
                     cell_type: CellType::Mountain,
                 });
-            } else if altitude > 0.0 {
-                if temp > 0.3 {
+            } else if altitude > 0.5 {
+                if temp > 0.7 {
                     row.push(Cell {
                         cell_type: CellType::Sand,
                     });
-                } else if temp < 0.01 {
-                    row.push(Cell {
-                        cell_type: CellType::Snow,
-                    });
-                } else {
+                } else if temp > 0.5 {
                     row.push(Cell {
                         cell_type: CellType::Grass,
                     });
+                } else if temp > 0.4 {
+                    row.push(Cell {
+                        cell_type: CellType::Tundra,
+                    });
+                } else {
+                    row.push(Cell {
+                        cell_type: CellType::Snow,
+                    });
                 }
-            } else if altitude > -0.05 {
+            } else if altitude > 0.46 {
                 row.push(Cell {
                     cell_type: CellType::Water,
                 });
-            } else if altitude > -0.1 {
+            } else if altitude > 0.40 {
                 row.push(Cell {
                     cell_type: CellType::MediumWater,
                 });
