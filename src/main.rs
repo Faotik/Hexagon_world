@@ -6,7 +6,7 @@ use std::{
 };
 
 use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
-use noise::{Fbm, MultiFractal, NoiseFn, Perlin, Vector4};
+use noise::{Fbm, MultiFractal, NoiseFn, Perlin, ScalePoint, Turbulence, Vector4};
 use sdl3::{
     event::Event,
     keyboard::Keycode,
@@ -45,6 +45,7 @@ impl Camera2D {
 enum CellType {
     Grass(f32),
     Dirt(f32),
+    Tree(f32),
     River(f32),
     Water(f32),
     MediumWater(f32),
@@ -56,13 +57,14 @@ enum CellType {
     HighMountain(f32),
     Tundra(f32),
     ShallowWater(f32),
+    Ice(f32),
 }
 
 fn increase_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
     (
-        (color.0 / (1.0 - height * 2.0)).max(0.0).min(255.0),
-        (color.1 / (1.0 - height * 2.0)).max(0.0).min(255.0),
-        (color.2 / (1.0 - height * 2.0)).max(0.0).min(255.0),
+        (color.0 / (1.0 - height * 1.5)).max(0.0).min(255.0),
+        (color.1 / (1.0 - height * 1.5)).max(0.0).min(255.0),
+        (color.2 / (1.0 - height * 1.5)).max(0.0).min(255.0),
     )
 }
 
@@ -98,12 +100,14 @@ impl CellType {
             CellType::HighMountain(..) => 300,
             CellType::Dirt(..) => 1,
             CellType::ShallowWater(..) => 2,
+            CellType::Tree(..) => 5,
+            CellType::Ice(..) => 3,
         }
     }
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Grass(height) => increase_color_by_height((15.0, 130.0, 15.0), height),
+            CellType::Grass(height) => increase_color_by_height((155.0, 245.0, 147.0), height),
             CellType::ShallowWater(height) => {
                 increase_color_by_height_water((40.0, 100.0, 160.0), height)
             }
@@ -112,8 +116,8 @@ impl CellType {
                 increase_color_by_height_water((22.0, 30.0, 64.0), height)
             }
             CellType::DeepWater(height) => decrease_color_by_height((30.0, 50.0, 100.0), height),
-            CellType::Sand(height) => increase_color_by_height((200.0, 200.0, 100.0), height),
-            CellType::Snow(height) => increase_color_by_height((200.0, 200.0, 200.0), height),
+            CellType::Sand(height) => increase_color_by_height((210.0, 210.0, 110.0), height),
+            CellType::Snow(height) => increase_color_by_height((220.0, 220.0, 220.0), height),
             CellType::River(height) => increase_color_by_height((200.0, 20.0, 20.0), height),
             CellType::Tundra(height) => increase_color_by_height((20.0, 100.0, 20.0), height),
             CellType::Mountain(height) => decrease_color_by_height((100.0, 100.0, 100.0), height),
@@ -121,7 +125,9 @@ impl CellType {
                 decrease_color_by_height((80.0, 80.0, 80.0), height)
             }
             CellType::HighMountain(height) => decrease_color_by_height((60.0, 60.0, 60.0), height),
-            CellType::Dirt(height) => increase_color_by_height((100.0, 80.0, 50.0), height),
+            CellType::Dirt(height) => increase_color_by_height((235.0, 225.0, 148.0), height),
+            CellType::Tree(height) => increase_color_by_height((50.0, 130.0, 50.0), height),
+            CellType::Ice(height) => increase_color_by_height_water((150.0, 150.0, 200.0), height),
         }
     }
 }
@@ -141,11 +147,16 @@ fn generate_world() -> Vec<Vec<Cell>> {
     let mut world: Vec<Vec<Cell>> = vec![];
 
     let altitude_noise = Fbm::<Perlin>::new(seed as u32);
-    let altitude_noise = altitude_noise.set_octaves(10);
-    let altitude_noise = altitude_noise.set_frequency(0.2);
+    let altitude_noise = altitude_noise.set_octaves(10).set_frequency(0.2);
 
-    let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 1);
-    let temperature_noise = temperature_noise.set_frequency(0.35);
+    let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 10).set_frequency(0.35);
+
+    let vegetation_noise = Fbm::<Perlin>::new(seed as u32 + 20).set_frequency(0.1);
+    let vegetation_noise = Turbulence::<Fbm<Perlin>, Perlin>::new(vegetation_noise)
+        .set_roughness(10)
+        .set_power(20.0);
+
+    let beach_noise = Fbm::<Perlin>::new(seed as u32 + 30).set_frequency(0.35);
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
@@ -154,6 +165,8 @@ fn generate_world() -> Vec<Vec<Cell>> {
             let sy = y as f64 * 0.01 as f64;
             let altitude = (altitude_noise.get([sx, sy]) + 1.0) / 2.0;
             let temp = (temperature_noise.get([sx, sy]) + 1.0) / 2.0;
+            let vegetation = (vegetation_noise.get([sx, sy]) + 1.0) / 2.0;
+            let beach_bias = (beach_noise.get([sx, sy]) + 1.0) / 2.0;
 
             if altitude > 0.85 {
                 row.push(Cell {
@@ -181,9 +194,15 @@ fn generate_world() -> Vec<Vec<Cell>> {
                         cell_type: CellType::Dirt(altitude as f32 - 0.6),
                     });
                 } else if temp > 0.4 {
-                    row.push(Cell {
-                        cell_type: CellType::Grass(altitude as f32 - 0.6),
-                    });
+                    if vegetation > 0.62 {
+                        row.push(Cell {
+                            cell_type: CellType::Tree(altitude as f32 - 0.6),
+                        });
+                    } else {
+                        row.push(Cell {
+                            cell_type: CellType::Grass(altitude as f32 - 0.6),
+                        });
+                    }
                 } else if temp > 0.3 {
                     row.push(Cell {
                         cell_type: CellType::Tundra(altitude as f32 - 0.6),
@@ -193,9 +212,17 @@ fn generate_world() -> Vec<Vec<Cell>> {
                         cell_type: CellType::Snow(altitude as f32 - 0.6),
                     });
                 }
-            } else if altitude > 0.56 {
+            } else if altitude > 0.59 && beach_bias > 0.65 {
+                row.push(Cell {
+                    cell_type: CellType::Sand(altitude as f32 - 0.56),
+                });
+            } else if altitude > 0.56 && temp > 0.3 {
                 row.push(Cell {
                     cell_type: CellType::ShallowWater(altitude as f32 - 0.56),
+                });
+            } else if altitude > 0.56 {
+                row.push(Cell {
+                    cell_type: CellType::Ice(altitude as f32 - 0.56),
                 });
             } else if altitude > 0.52 {
                 row.push(Cell {
