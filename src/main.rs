@@ -58,6 +58,8 @@ enum CellType {
     Tundra(f32),
     ShallowWater(f32),
     Ice(f32),
+    Cliff(f32),
+    MediumCliff(f32),
 }
 
 fn increase_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
@@ -102,6 +104,8 @@ impl CellType {
             CellType::ShallowWater(..) => 2,
             CellType::Tree(..) => 5,
             CellType::Ice(..) => 3,
+            CellType::Cliff(..) => 5,
+            CellType::MediumCliff(..) => 5,
         }
     }
 
@@ -117,7 +121,7 @@ impl CellType {
             }
             CellType::DeepWater(height) => decrease_color_by_height((30.0, 50.0, 100.0), height),
             CellType::Sand(height) => increase_color_by_height((210.0, 210.0, 110.0), height),
-            CellType::Snow(height) => increase_color_by_height((220.0, 220.0, 220.0), height),
+            CellType::Snow(height) => increase_color_by_height((230.0, 230.0, 230.0), height),
             CellType::River(height) => increase_color_by_height((200.0, 20.0, 20.0), height),
             CellType::Tundra(height) => increase_color_by_height((20.0, 100.0, 20.0), height),
             CellType::Mountain(height) => decrease_color_by_height((100.0, 100.0, 100.0), height),
@@ -128,6 +132,10 @@ impl CellType {
             CellType::Dirt(height) => increase_color_by_height((205.0, 225.0, 148.0), height),
             CellType::Tree(height) => increase_color_by_height((50.0, 130.0, 50.0), height),
             CellType::Ice(height) => increase_color_by_height_water((150.0, 150.0, 200.0), height),
+            CellType::Cliff(height) => decrease_color_by_height((150.0, 150.0, 130.0), height),
+            CellType::MediumCliff(height) => {
+                decrease_color_by_height((130.0, 130.0, 110.0), height)
+            }
         }
     }
 }
@@ -152,7 +160,7 @@ fn generate_world() -> Vec<Vec<Cell>> {
     let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 10).set_frequency(0.35);
 
     let vegetation_noise = Fbm::<Perlin>::new(seed as u32 + 20).set_frequency(0.1);
-    let vegetation_noise = Turbulence::<Fbm<Perlin>, Fbm<Perlin>>::new(vegetation_noise)
+    let vegetation_noise = Turbulence::<Fbm<Perlin>, Perlin>::new(vegetation_noise)
         .set_roughness(10)
         .set_power(2.0);
 
@@ -161,7 +169,9 @@ fn generate_world() -> Vec<Vec<Cell>> {
     let cliff_noise = RidgedMulti::<Perlin>::new(seed as u32 + 40)
         .set_frequency(1.0)
         .set_octaves(10)
-        .set_lacunarity(2.0);
+        .set_lacunarity(2.0)
+        .set_attenuation(2.0)
+        .set_persistence(2.0);
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
@@ -190,13 +200,13 @@ fn generate_world() -> Vec<Vec<Cell>> {
                 row.push(Cell {
                     cell_type: CellType::Mountain(altitude as f32 - 0.78),
                 });
-            } else if altitude > 0.7 && cliff_bias > 0.83 {
+            } else if altitude > 0.7 && cliff_bias > 0.76 {
                 row.push(Cell {
-                    cell_type: CellType::MediumMountain(altitude as f32 - 0.78),
+                    cell_type: CellType::MediumCliff(altitude as f32 - 0.7),
                 });
-            } else if altitude > 0.7 && cliff_bias > 0.75 {
+            } else if altitude > 0.7 && cliff_bias > 0.72 {
                 row.push(Cell {
-                    cell_type: CellType::Mountain(altitude as f32 - 0.78),
+                    cell_type: CellType::Cliff(altitude as f32 - 0.7),
                 });
             } else if altitude > 0.6 {
                 if temp > 0.7 {
@@ -226,7 +236,7 @@ fn generate_world() -> Vec<Vec<Cell>> {
                         cell_type: CellType::Snow(altitude as f32 - 0.6),
                     });
                 }
-            } else if altitude > 0.59 && beach_bias > 0.65 {
+            } else if altitude > 0.59 && beach_bias > 0.65 && temp > 0.4 {
                 row.push(Cell {
                     cell_type: CellType::Sand(altitude as f32 - 0.56),
                 });
