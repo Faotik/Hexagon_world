@@ -6,7 +6,7 @@ use std::{
 };
 
 use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
-use noise::{Fbm, NoiseFn, Perlin, Vector4};
+use noise::{Fbm, MultiFractal, NoiseFn, Perlin, Vector4};
 use sdl3::{
     event::Event,
     keyboard::Keycode,
@@ -43,49 +43,85 @@ impl Camera2D {
 }
 
 enum CellType {
-    Grass,
-    River,
-    Water,
-    MediumWater,
-    DeepWater,
-    Sand,
-    Snow,
-    Mountain,
-    MediumMountain,
-    HighMountain,
-    Tundra,
+    Grass(f32),
+    Dirt(f32),
+    River(f32),
+    Water(f32),
+    MediumWater(f32),
+    DeepWater(f32),
+    Sand(f32),
+    Snow(f32),
+    Mountain(f32),
+    MediumMountain(f32),
+    HighMountain(f32),
+    Tundra(f32),
+    ShallowWater(f32),
+}
+
+fn increase_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+    (
+        (color.0 / (1.0 - height * 2.0)).max(0.0).min(255.0),
+        (color.1 / (1.0 - height * 2.0)).max(0.0).min(255.0),
+        (color.2 / (1.0 - height * 2.0)).max(0.0).min(255.0),
+    )
+}
+
+fn increase_color_by_height_water(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+    (
+        (color.0 / (1.0 - height * 7.0)).max(0.0).min(255.0),
+        (color.1 / (1.0 - height * 7.0)).max(0.0).min(255.0),
+        (color.2 / (1.0 - height * 7.0)).max(0.0).min(255.0),
+    )
+}
+
+fn decrease_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+    (
+        (color.0 * (1.0 - height.cbrt())).max(0.0).min(255.0),
+        (color.1 * (1.0 - height.cbrt())).max(0.0).min(255.0),
+        (color.2 * (1.0 - height.cbrt())).max(0.0).min(255.0),
+    )
 }
 
 impl CellType {
     fn get_weight(self: &Self) -> i32 {
         match self {
-            CellType::Grass => 1,
-            CellType::Water => 5,
-            CellType::Sand => 2,
-            CellType::Snow => 2,
-            CellType::Mountain => 100,
-            CellType::DeepWater => 20,
-            CellType::MediumWater => 10,
-            CellType::River => 6,
-            CellType::Tundra => 2,
-            CellType::MediumMountain => 200,
-            CellType::HighMountain => 300,
+            CellType::Grass(..) => 1,
+            CellType::Water(..) => 5,
+            CellType::Sand(..) => 2,
+            CellType::Snow(..) => 2,
+            CellType::Mountain(..) => 100,
+            CellType::DeepWater(..) => 20,
+            CellType::MediumWater(..) => 10,
+            CellType::River(..) => 6,
+            CellType::Tundra(..) => 2,
+            CellType::MediumMountain(..) => 200,
+            CellType::HighMountain(..) => 300,
+            CellType::Dirt(..) => 1,
+            CellType::ShallowWater(..) => 2,
         }
     }
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Grass => (20.0, 160.0, 20.0),
-            CellType::Water => (20.0, 20.0, 180.0),
-            CellType::Sand => (231.0, 255.0, 133.0),
-            CellType::Snow => (240.0, 240.0, 240.0),
-            CellType::Mountain => (100.0, 100.0, 100.0),
-            CellType::DeepWater => (10.0, 15.0, 30.0),
-            CellType::MediumWater => (22.0, 30.0, 64.0),
-            CellType::River => (200.0, 20.0, 20.0),
-            CellType::Tundra => (20.0, 100.0, 20.0),
-            CellType::MediumMountain => (80.0, 80.0, 80.0),
-            CellType::HighMountain => (60.0, 60.0, 60.0),
+            CellType::Grass(height) => increase_color_by_height((15.0, 130.0, 15.0), height),
+            CellType::ShallowWater(height) => {
+                increase_color_by_height_water((40.0, 100.0, 160.0), height)
+            }
+            CellType::Water(height) => increase_color_by_height_water((15.0, 15.0, 160.0), height),
+            CellType::MediumWater(height) => {
+                increase_color_by_height_water((22.0, 30.0, 64.0), height)
+            }
+            CellType::DeepWater(height) => decrease_color_by_height((30.0, 50.0, 100.0), height),
+            CellType::Sand(height) => increase_color_by_height((200.0, 200.0, 100.0), height),
+            CellType::Snow(height) => increase_color_by_height((200.0, 200.0, 200.0), height),
+            CellType::River(height) => increase_color_by_height((200.0, 20.0, 20.0), height),
+            CellType::Tundra(height) => increase_color_by_height((20.0, 100.0, 20.0), height),
+            CellType::Mountain(height) => decrease_color_by_height((100.0, 100.0, 100.0), height),
+            CellType::MediumMountain(height) => {
+                decrease_color_by_height((80.0, 80.0, 80.0), height)
+            }
+            CellType::HighMountain(height) => decrease_color_by_height((60.0, 60.0, 60.0), height),
+            CellType::Dirt(height) => increase_color_by_height((100.0, 80.0, 50.0), height),
         }
     }
 }
@@ -104,11 +140,12 @@ fn generate_world() -> Vec<Vec<Cell>> {
 
     let mut world: Vec<Vec<Cell>> = vec![];
 
-    let mut altitude_noise = Fbm::<Perlin>::new(seed as u32);
-    altitude_noise.frequency = 0.5;
+    let altitude_noise = Fbm::<Perlin>::new(seed as u32);
+    let altitude_noise = altitude_noise.set_octaves(10);
+    let altitude_noise = altitude_noise.set_frequency(0.2);
 
-    let mut temperature_noise = Fbm::<Perlin>::new(seed as u32 + 1);
-    temperature_noise.frequency = 0.5;
+    let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 1);
+    let temperature_noise = temperature_noise.set_frequency(0.35);
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
@@ -120,45 +157,57 @@ fn generate_world() -> Vec<Vec<Cell>> {
 
             if altitude > 0.85 {
                 row.push(Cell {
-                    cell_type: CellType::HighMountain,
+                    cell_type: CellType::Snow(altitude as f32 - 0.85),
+                });
+            } else if altitude > 0.81 {
+                row.push(Cell {
+                    cell_type: CellType::HighMountain(altitude as f32 - 0.81),
                 });
             } else if altitude > 0.8 {
                 row.push(Cell {
-                    cell_type: CellType::MediumMountain,
+                    cell_type: CellType::MediumMountain(altitude as f32 - 0.8),
                 });
-            } else if altitude > 0.75 {
+            } else if altitude > 0.78 {
                 row.push(Cell {
-                    cell_type: CellType::Mountain,
+                    cell_type: CellType::Mountain(altitude as f32 - 0.78),
                 });
-            } else if altitude > 0.5 {
+            } else if altitude > 0.6 {
                 if temp > 0.7 {
                     row.push(Cell {
-                        cell_type: CellType::Sand,
+                        cell_type: CellType::Sand(altitude as f32 - 0.6),
                     });
-                } else if temp > 0.5 {
+                } else if temp > 0.6 {
                     row.push(Cell {
-                        cell_type: CellType::Grass,
+                        cell_type: CellType::Dirt(altitude as f32 - 0.6),
                     });
                 } else if temp > 0.4 {
                     row.push(Cell {
-                        cell_type: CellType::Tundra,
+                        cell_type: CellType::Grass(altitude as f32 - 0.6),
+                    });
+                } else if temp > 0.3 {
+                    row.push(Cell {
+                        cell_type: CellType::Tundra(altitude as f32 - 0.6),
                     });
                 } else {
                     row.push(Cell {
-                        cell_type: CellType::Snow,
+                        cell_type: CellType::Snow(altitude as f32 - 0.6),
                     });
                 }
-            } else if altitude > 0.46 {
+            } else if altitude > 0.56 {
                 row.push(Cell {
-                    cell_type: CellType::Water,
+                    cell_type: CellType::ShallowWater(altitude as f32 - 0.56),
                 });
-            } else if altitude > 0.40 {
+            } else if altitude > 0.52 {
                 row.push(Cell {
-                    cell_type: CellType::MediumWater,
+                    cell_type: CellType::Water(altitude as f32 - 0.52),
+                });
+            } else if altitude > 0.48 {
+                row.push(Cell {
+                    cell_type: CellType::MediumWater(altitude as f32 - 0.48),
                 });
             } else {
                 row.push(Cell {
-                    cell_type: CellType::DeepWater,
+                    cell_type: CellType::DeepWater(altitude as f32 - 0.0),
                 });
             }
         }
