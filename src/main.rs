@@ -6,7 +6,7 @@ use std::{
 };
 
 use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
-use noise::{Fbm, MultiFractal, NoiseFn, Perlin, ScalePoint, Turbulence, Vector4};
+use noise::{Fbm, MultiFractal, NoiseFn, Perlin, RidgedMulti, ScalePoint, Turbulence, Vector4};
 use sdl3::{
     event::Event,
     keyboard::Keycode,
@@ -107,7 +107,7 @@ impl CellType {
 
     fn get_color(self: &Self) -> (f32, f32, f32) {
         match self {
-            CellType::Grass(height) => increase_color_by_height((155.0, 245.0, 147.0), height),
+            CellType::Grass(height) => increase_color_by_height((125.0, 205.0, 127.0), height),
             CellType::ShallowWater(height) => {
                 increase_color_by_height_water((40.0, 100.0, 160.0), height)
             }
@@ -125,7 +125,7 @@ impl CellType {
                 decrease_color_by_height((80.0, 80.0, 80.0), height)
             }
             CellType::HighMountain(height) => decrease_color_by_height((60.0, 60.0, 60.0), height),
-            CellType::Dirt(height) => increase_color_by_height((235.0, 225.0, 148.0), height),
+            CellType::Dirt(height) => increase_color_by_height((205.0, 225.0, 148.0), height),
             CellType::Tree(height) => increase_color_by_height((50.0, 130.0, 50.0), height),
             CellType::Ice(height) => increase_color_by_height_water((150.0, 150.0, 200.0), height),
         }
@@ -152,11 +152,16 @@ fn generate_world() -> Vec<Vec<Cell>> {
     let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 10).set_frequency(0.35);
 
     let vegetation_noise = Fbm::<Perlin>::new(seed as u32 + 20).set_frequency(0.1);
-    let vegetation_noise = Turbulence::<Fbm<Perlin>, Perlin>::new(vegetation_noise)
+    let vegetation_noise = Turbulence::<Fbm<Perlin>, Fbm<Perlin>>::new(vegetation_noise)
         .set_roughness(10)
-        .set_power(20.0);
+        .set_power(2.0);
 
     let beach_noise = Fbm::<Perlin>::new(seed as u32 + 30).set_frequency(0.35);
+
+    let cliff_noise = RidgedMulti::<Perlin>::new(seed as u32 + 40)
+        .set_frequency(1.0)
+        .set_octaves(10)
+        .set_lacunarity(2.0);
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
@@ -167,6 +172,7 @@ fn generate_world() -> Vec<Vec<Cell>> {
             let temp = (temperature_noise.get([sx, sy]) + 1.0) / 2.0;
             let vegetation = (vegetation_noise.get([sx, sy]) + 1.0) / 2.0;
             let beach_bias = (beach_noise.get([sx, sy]) + 1.0) / 2.0;
+            let cliff_bias = (cliff_noise.get([sx, sy]) + 1.0) / 2.0;
 
             if altitude > 0.85 {
                 row.push(Cell {
@@ -184,12 +190,20 @@ fn generate_world() -> Vec<Vec<Cell>> {
                 row.push(Cell {
                     cell_type: CellType::Mountain(altitude as f32 - 0.78),
                 });
+            } else if altitude > 0.7 && cliff_bias > 0.83 {
+                row.push(Cell {
+                    cell_type: CellType::MediumMountain(altitude as f32 - 0.78),
+                });
+            } else if altitude > 0.7 && cliff_bias > 0.75 {
+                row.push(Cell {
+                    cell_type: CellType::Mountain(altitude as f32 - 0.78),
+                });
             } else if altitude > 0.6 {
                 if temp > 0.7 {
                     row.push(Cell {
                         cell_type: CellType::Sand(altitude as f32 - 0.6),
                     });
-                } else if temp > 0.6 {
+                } else if temp > 0.5 {
                     row.push(Cell {
                         cell_type: CellType::Dirt(altitude as f32 - 0.6),
                     });
