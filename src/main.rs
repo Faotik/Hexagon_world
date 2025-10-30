@@ -500,10 +500,10 @@ pub fn main() {
         zoom: 1.0,
     };
 
-    let vertex_src = fs::read_to_string("./assets/vertex.glsl").unwrap();
-    let fragment_src = fs::read_to_string("./assets/fragment.glsl").unwrap();
+    let vertex_src = include_str!("../assets/vertex.glsl");
+    let fragment_src = include_str!("../assets/fragment.glsl");
 
-    let shader_program = create_shader_program(&vertex_src, &fragment_src).unwrap();
+    let shader_program = create_shader_program(vertex_src, fragment_src).unwrap();
 
     let world = generate_world();
     let colors = generate_world_colors(&world);
