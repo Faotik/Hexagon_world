@@ -1,3 +1,15 @@
+use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
+use noise::{
+    Abs, Fbm, MultiFractal, NoiseFn, Perlin, RidgedMulti, ScalePoint, Turbulence, Vector4,
+    utils::{self, PlaneMapBuilder},
+};
+use rand::{Rng, seq::SliceRandom, thread_rng};
+use sdl3::{
+    event::Event,
+    keyboard::Keycode,
+    mouse::MouseButton,
+    video::{GLContext, GLProfile},
+};
 use std::{
     ffi::CString,
     fs, mem, ptr,
@@ -5,30 +17,21 @@ use std::{
     vec,
 };
 
-use gl::types::{GLchar, GLsizeiptr, GLuint, GLvoid};
-use noise::{Fbm, MultiFractal, NoiseFn, Perlin, RidgedMulti, ScalePoint, Turbulence, Vector4};
-use sdl3::{
-    event::Event,
-    keyboard::Keycode,
-    mouse::MouseButton,
-    video::{GLContext, GLProfile},
-};
-
-const WINDOW_WIDTH: u32 = (640.0 * 1.5) as u32;
-const WINDOW_HEIGHT: u32 = (480.0 * 1.5) as u32;
+const WINDOW_WIDTH: u32 = 1650;
+const WINDOW_HEIGHT: u32 = 1080;
 
 const WORLD_WIDTH: i32 = 1000;
 const WORLD_HEIGTH: i32 = 1000;
 
 struct Camera2D {
-    offset: (f32, f32),
-    position: (f32, f32),
-    rotation: f32,
-    zoom: f32,
+    offset: (f64, f64),
+    position: (f64, f64),
+    rotation: f64,
+    zoom: f64,
 }
 
 impl Camera2D {
-    fn get_screen_to_world(self: &Self, screen_x: f32, screen_y: f32) -> (f32, f32) {
+    fn get_screen_to_world(self: &Self, screen_x: f64, screen_y: f64) -> (f64, f64) {
         let mut world_x = screen_x;
         let mut world_y = screen_y;
         world_x -= self.offset.0;
@@ -43,34 +46,35 @@ impl Camera2D {
 }
 
 enum CellType {
-    Grass(f32),
-    Dirt(f32),
-    Tree(f32),
-    River(f32),
-    Water(f32),
-    MediumWater(f32),
-    DeepWater(f32),
-    Sand(f32),
-    Snow(f32),
-    Mountain(f32),
-    MediumMountain(f32),
-    HighMountain(f32),
-    Tundra(f32),
-    ShallowWater(f32),
-    Ice(f32),
-    Cliff(f32),
-    MediumCliff(f32),
+    Grass,
+    Dirt,
+    Tree,
+    River,
+    Water,
+    MediumWater,
+    DeepWater,
+    Sand,
+    Snow,
+    Mountain,
+    MediumMountain,
+    HighMountain,
+    Tundra,
+    ShallowWater,
+    Ice,
+    Cliff,
+    MediumCliff,
+    Lake,
 }
 
-fn increase_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+fn increase_color_by_height(color: (f64, f64, f64), height: f64) -> (f64, f64, f64) {
     (
-        (color.0 / (1.0 - height * 1.5)).max(0.0).min(255.0),
-        (color.1 / (1.0 - height * 1.5)).max(0.0).min(255.0),
-        (color.2 / (1.0 - height * 1.5)).max(0.0).min(255.0),
+        (color.0 / (1.0 - height * 1.4)).max(0.0).min(255.0),
+        (color.1 / (1.0 - height * 1.4)).max(0.0).min(255.0),
+        (color.2 / (1.0 - height * 1.4)).max(0.0).min(255.0),
     )
 }
 
-fn increase_color_by_height_water(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+fn increase_color_by_height_water(color: (f64, f64, f64), height: f64) -> (f64, f64, f64) {
     (
         (color.0 / (1.0 - height * 7.0)).max(0.0).min(255.0),
         (color.1 / (1.0 - height * 7.0)).max(0.0).min(255.0),
@@ -78,7 +82,7 @@ fn increase_color_by_height_water(color: (f32, f32, f32), height: &f32) -> (f32,
     )
 }
 
-fn decrease_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, f32) {
+fn decrease_color_by_height(color: (f64, f64, f64), height: f64) -> (f64, f64, f64) {
     (
         (color.0 * (1.0 - height.cbrt())).max(0.0).min(255.0),
         (color.1 * (1.0 - height.cbrt())).max(0.0).min(255.0),
@@ -89,59 +93,194 @@ fn decrease_color_by_height(color: (f32, f32, f32), height: &f32) -> (f32, f32, 
 impl CellType {
     fn get_weight(self: &Self) -> i32 {
         match self {
-            CellType::Grass(..) => 1,
-            CellType::Water(..) => 5,
-            CellType::Sand(..) => 2,
-            CellType::Snow(..) => 2,
-            CellType::Mountain(..) => 100,
-            CellType::DeepWater(..) => 20,
-            CellType::MediumWater(..) => 10,
-            CellType::River(..) => 6,
-            CellType::Tundra(..) => 2,
-            CellType::MediumMountain(..) => 200,
-            CellType::HighMountain(..) => 300,
-            CellType::Dirt(..) => 1,
-            CellType::ShallowWater(..) => 2,
-            CellType::Tree(..) => 5,
-            CellType::Ice(..) => 3,
-            CellType::Cliff(..) => 5,
-            CellType::MediumCliff(..) => 5,
-        }
-    }
-
-    fn get_color(self: &Self) -> (f32, f32, f32) {
-        match self {
-            CellType::Grass(height) => increase_color_by_height((125.0, 205.0, 127.0), height),
-            CellType::ShallowWater(height) => {
-                increase_color_by_height_water((40.0, 100.0, 160.0), height)
-            }
-            CellType::Water(height) => increase_color_by_height_water((15.0, 15.0, 160.0), height),
-            CellType::MediumWater(height) => {
-                increase_color_by_height_water((22.0, 30.0, 64.0), height)
-            }
-            CellType::DeepWater(height) => decrease_color_by_height((30.0, 50.0, 100.0), height),
-            CellType::Sand(height) => increase_color_by_height((210.0, 210.0, 110.0), height),
-            CellType::Snow(height) => increase_color_by_height((230.0, 230.0, 230.0), height),
-            CellType::River(height) => increase_color_by_height((200.0, 20.0, 20.0), height),
-            CellType::Tundra(height) => increase_color_by_height((20.0, 100.0, 20.0), height),
-            CellType::Mountain(height) => decrease_color_by_height((100.0, 100.0, 100.0), height),
-            CellType::MediumMountain(height) => {
-                decrease_color_by_height((80.0, 80.0, 80.0), height)
-            }
-            CellType::HighMountain(height) => decrease_color_by_height((60.0, 60.0, 60.0), height),
-            CellType::Dirt(height) => increase_color_by_height((205.0, 225.0, 148.0), height),
-            CellType::Tree(height) => increase_color_by_height((50.0, 130.0, 50.0), height),
-            CellType::Ice(height) => increase_color_by_height_water((150.0, 150.0, 200.0), height),
-            CellType::Cliff(height) => decrease_color_by_height((150.0, 150.0, 130.0), height),
-            CellType::MediumCliff(height) => {
-                decrease_color_by_height((130.0, 130.0, 110.0), height)
-            }
+            CellType::Grass => 1,
+            CellType::Water => 5,
+            CellType::Sand => 2,
+            CellType::Snow => 2,
+            CellType::Mountain => 100,
+            CellType::DeepWater => 20,
+            CellType::MediumWater => 10,
+            CellType::River => 6,
+            CellType::Tundra => 2,
+            CellType::MediumMountain => 200,
+            CellType::HighMountain => 300,
+            CellType::Dirt => 1,
+            CellType::ShallowWater => 2,
+            CellType::Tree => 5,
+            CellType::Ice => 3,
+            CellType::Cliff => 5,
+            CellType::MediumCliff => 5,
+            CellType::Lake => 5,
         }
     }
 }
 
 struct Cell {
     cell_type: CellType,
+    altitude: f64,
+    relative_altitude: f64,
+}
+
+impl Cell {
+    fn get_color(self: &Self) -> (f64, f64, f64) {
+        match self.cell_type {
+            CellType::Grass => {
+                increase_color_by_height((125.0, 205.0, 127.0), self.relative_altitude)
+            }
+            CellType::ShallowWater => {
+                increase_color_by_height_water((40.0, 100.0, 160.0), self.relative_altitude)
+            }
+            CellType::Water => {
+                increase_color_by_height_water((15.0, 15.0, 160.0), self.relative_altitude)
+            }
+            CellType::MediumWater => {
+                increase_color_by_height_water((22.0, 30.0, 64.0), self.relative_altitude)
+            }
+            CellType::DeepWater => {
+                decrease_color_by_height((30.0, 50.0, 100.0), self.relative_altitude)
+            }
+            CellType::Sand => {
+                increase_color_by_height((230.0, 210.0, 100.0), self.relative_altitude)
+            }
+            CellType::Snow => {
+                increase_color_by_height((230.0, 230.0, 230.0), self.relative_altitude)
+            }
+            CellType::River => {
+                increase_color_by_height((50.0, 100.0, 150.0), self.relative_altitude)
+            }
+            CellType::Tundra => {
+                increase_color_by_height((20.0, 100.0, 20.0), self.relative_altitude)
+            }
+            CellType::Mountain => {
+                decrease_color_by_height((100.0, 100.0, 100.0), self.relative_altitude)
+            }
+            CellType::MediumMountain => {
+                decrease_color_by_height((80.0, 80.0, 80.0), self.relative_altitude)
+            }
+            CellType::HighMountain => {
+                decrease_color_by_height((60.0, 60.0, 60.0), self.relative_altitude)
+            }
+            CellType::Dirt => {
+                increase_color_by_height((196.0, 210.0, 130.0), self.relative_altitude)
+            }
+            CellType::Tree => increase_color_by_height((50.0, 150.0, 50.0), self.relative_altitude),
+            CellType::Ice => {
+                increase_color_by_height_water((150.0, 150.0, 200.0), self.relative_altitude)
+            }
+            CellType::Cliff => {
+                decrease_color_by_height((150.0, 150.0, 130.0), self.relative_altitude)
+            }
+            CellType::MediumCliff => {
+                decrease_color_by_height((130.0, 130.0, 110.0), self.relative_altitude)
+            }
+            CellType::Lake => {
+                increase_color_by_height((40.0, 100.0, 160.0), self.relative_altitude)
+            }
+        }
+    }
+}
+
+fn get_neighbors(map: &Vec<Vec<Cell>>, x: usize, y: usize) -> Vec<(usize, usize)> {
+    let mut neighbors: Vec<(usize, usize)> = vec![];
+
+    let h = map.len() as i32;
+    let w = map[0].len() as i32 * 2;
+
+    if x as i32 + 2 < w {
+        neighbors.push((x + 2, y));
+    }
+    if x as i32 + 1 < w && y as i32 - 1 >= 0 {
+        neighbors.push((x + 1, y - 1));
+    }
+    if x as i32 - 1 >= 0 && y as i32 - 1 >= 0 {
+        neighbors.push((x - 1, y - 1));
+    }
+    if x as i32 - 2 >= 0 {
+        neighbors.push((x - 2, y));
+    }
+    if x as i32 - 1 >= 0 && y as i32 + 1 < h {
+        neighbors.push((x - 1, y + 1));
+    }
+    if x as i32 + 1 < w && y as i32 + 1 < h {
+        neighbors.push((x + 1, y + 1));
+    }
+
+    neighbors
+}
+
+fn generate_river(map: &mut Vec<Vec<Cell>>) {
+    let mut rng = rand::rng();
+
+    for y in 0..WORLD_HEIGTH as usize {
+        for x in 0..WORLD_WIDTH as usize {
+            if (matches!(map[y][x].cell_type, CellType::Cliff)
+                || matches!(map[y][x].cell_type, CellType::MediumCliff)
+                || matches!(map[y][x].cell_type, CellType::Mountain)
+                || matches!(map[y][x].cell_type, CellType::MediumMountain)
+                || matches!(map[y][x].cell_type, CellType::HighMountain))
+                && rng.random_bool(0.0008)
+            {
+                let mut x = x * 2 + y % 2;
+                let mut y = y;
+
+                let mut visited = vec![];
+
+                'finish: loop {
+                    map[y][x / 2].cell_type = CellType::River;
+                    visited.push((x, y));
+                    let neighbors_pos = get_neighbors(map, x, y);
+                    if neighbors_pos.len() < 6 {
+                        break;
+                    }
+                    let mut neighbors_pos: Vec<(usize, usize)> = neighbors_pos
+                        .iter()
+                        .filter(|cell_pos| !(visited.contains(cell_pos)))
+                        .cloned()
+                        .collect();
+                    if neighbors_pos.is_empty() {
+                        break;
+                    }
+                    neighbors_pos.shuffle(&mut rng);
+                    let mut min_altitude_cell_pos = neighbors_pos[0];
+                    for cell_pos in neighbors_pos {
+                        if map[cell_pos.1][cell_pos.0 / 2].altitude
+                            < map[min_altitude_cell_pos.1][min_altitude_cell_pos.0 / 2].altitude
+                        {
+                            min_altitude_cell_pos = cell_pos;
+                            break;
+                        }
+
+                        if matches!(map[cell_pos.1][cell_pos.0 / 2].cell_type, CellType::Lake)
+                            || matches!(map[cell_pos.1][cell_pos.0 / 2].cell_type, CellType::Water)
+                            || matches!(
+                                map[cell_pos.1][cell_pos.0 / 2].cell_type,
+                                CellType::ShallowWater
+                            )
+                            || matches!(
+                                map[cell_pos.1][cell_pos.0 / 2].cell_type,
+                                CellType::MediumWater
+                            )
+                            || matches!(
+                                map[cell_pos.1][cell_pos.0 / 2].cell_type,
+                                CellType::DeepWater
+                            )
+                        {
+                            break 'finish;
+                        }
+                    }
+
+                    if map[min_altitude_cell_pos.1][min_altitude_cell_pos.0 / 2].altitude
+                        > map[y][x / 2].altitude + 0.04
+                    {
+                        break;
+                    }
+
+                    x = min_altitude_cell_pos.0;
+                    y = min_altitude_cell_pos.1;
+                }
+            }
+        }
+    }
 }
 
 fn generate_world() -> Vec<Vec<Cell>> {
@@ -154,24 +293,28 @@ fn generate_world() -> Vec<Vec<Cell>> {
 
     let mut world: Vec<Vec<Cell>> = vec![];
 
-    let altitude_noise = Fbm::<Perlin>::new(seed as u32);
-    let altitude_noise = altitude_noise.set_octaves(10).set_frequency(0.2);
+    let altitude_noise = Fbm::<Perlin>::new(seed as u32)
+        .set_octaves(10)
+        .set_frequency(0.2);
 
-    let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 10).set_frequency(0.35);
+    let temperature_noise = Fbm::<Perlin>::new(seed as u32 + 10).set_frequency(0.25);
 
-    let vegetation_noise = Fbm::<Perlin>::new(seed as u32 + 20).set_frequency(0.1);
+    let vegetation_noise = Fbm::<Perlin>::new(seed as u32 + 20).set_frequency(0.3);
     let vegetation_noise = Turbulence::<Fbm<Perlin>, Perlin>::new(vegetation_noise)
-        .set_roughness(10)
+        .set_roughness(20)
         .set_power(2.0);
 
     let beach_noise = Fbm::<Perlin>::new(seed as u32 + 30).set_frequency(0.35);
 
     let cliff_noise = RidgedMulti::<Perlin>::new(seed as u32 + 40)
         .set_frequency(1.0)
+        .set_attenuation(0.8)
+        .set_persistence(5.0)
+        .set_octaves(10);
+
+    let lake_noise = Fbm::<Perlin>::new(seed as u32 + 50)
         .set_octaves(10)
-        .set_lacunarity(2.0)
-        .set_attenuation(2.0)
-        .set_persistence(2.0);
+        .set_frequency(0.2);
 
     for y in 0..WORLD_HEIGTH {
         let mut row = Vec::new();
@@ -182,88 +325,135 @@ fn generate_world() -> Vec<Vec<Cell>> {
             let temp = (temperature_noise.get([sx, sy]) + 1.0) / 2.0;
             let vegetation = (vegetation_noise.get([sx, sy]) + 1.0) / 2.0;
             let beach_bias = (beach_noise.get([sx, sy]) + 1.0) / 2.0;
-            let cliff_bias = (cliff_noise.get([sx, sy]) + 1.0) / 2.0;
+            let cliff_bias = ((cliff_noise.get([sx, sy]) + 1.0) / 2.0).powf(0.1);
+            let lake_bias = (lake_noise.get([sx, sy]) + 1.0) / 2.0;
 
             if altitude > 0.85 {
                 row.push(Cell {
-                    cell_type: CellType::Snow(altitude as f32 - 0.85),
+                    cell_type: CellType::Snow,
+                    relative_altitude: altitude - 0.85,
+                    altitude: altitude,
                 });
             } else if altitude > 0.81 {
                 row.push(Cell {
-                    cell_type: CellType::HighMountain(altitude as f32 - 0.81),
+                    cell_type: CellType::HighMountain,
+                    relative_altitude: altitude - 0.81,
+                    altitude: altitude,
                 });
             } else if altitude > 0.8 {
                 row.push(Cell {
-                    cell_type: CellType::MediumMountain(altitude as f32 - 0.8),
+                    cell_type: CellType::MediumMountain,
+                    relative_altitude: altitude - 0.8,
+                    altitude: altitude,
                 });
             } else if altitude > 0.78 {
                 row.push(Cell {
-                    cell_type: CellType::Mountain(altitude as f32 - 0.78),
+                    cell_type: CellType::Mountain,
+                    relative_altitude: altitude - 0.78,
+                    altitude: altitude,
                 });
-            } else if altitude > 0.7 && cliff_bias > 0.76 {
+            } else if altitude > 0.65 && cliff_bias > 0.95 {
                 row.push(Cell {
-                    cell_type: CellType::MediumCliff(altitude as f32 - 0.7),
+                    cell_type: CellType::MediumCliff,
+                    relative_altitude: altitude - 0.65,
+                    altitude: altitude,
                 });
-            } else if altitude > 0.7 && cliff_bias > 0.72 {
+            } else if altitude > 0.65 && cliff_bias > 0.8 {
                 row.push(Cell {
-                    cell_type: CellType::Cliff(altitude as f32 - 0.7),
+                    cell_type: CellType::Cliff,
+                    relative_altitude: altitude - 0.65,
+                    altitude: altitude,
                 });
-            } else if altitude > 0.6 {
+            }
+            // else if altitude > 0.61 && altitude < 0.65 && lake_bias > 0.75 {
+            //     row.push(Cell {
+            //         cell_type: CellType::Lake,
+            //         relative_altitude: altitude - 0.61,
+            //         altitude: altitude,
+            //     });
+            // }
+            else if altitude > 0.6 {
                 if temp > 0.7 {
                     row.push(Cell {
-                        cell_type: CellType::Sand(altitude as f32 - 0.6),
+                        cell_type: CellType::Sand,
+                        relative_altitude: altitude - 0.6,
+                        altitude: altitude,
                     });
                 } else if temp > 0.5 {
                     row.push(Cell {
-                        cell_type: CellType::Dirt(altitude as f32 - 0.6),
+                        cell_type: CellType::Dirt,
+                        relative_altitude: altitude - 0.6,
+                        altitude: altitude,
                     });
                 } else if temp > 0.4 {
-                    if vegetation > 0.62 {
+                    if vegetation > 0.6 {
                         row.push(Cell {
-                            cell_type: CellType::Tree(altitude as f32 - 0.6),
+                            cell_type: CellType::Tree,
+                            relative_altitude: altitude - 0.6,
+                            altitude: altitude,
                         });
                     } else {
                         row.push(Cell {
-                            cell_type: CellType::Grass(altitude as f32 - 0.6),
+                            cell_type: CellType::Grass,
+                            relative_altitude: altitude - 0.6,
+                            altitude: altitude,
                         });
                     }
                 } else if temp > 0.3 {
                     row.push(Cell {
-                        cell_type: CellType::Tundra(altitude as f32 - 0.6),
+                        cell_type: CellType::Tundra,
+                        relative_altitude: altitude - 0.6,
+                        altitude: altitude,
                     });
                 } else {
                     row.push(Cell {
-                        cell_type: CellType::Snow(altitude as f32 - 0.6),
+                        cell_type: CellType::Snow,
+                        relative_altitude: altitude - 0.6,
+                        altitude: altitude,
                     });
                 }
             } else if altitude > 0.59 && beach_bias > 0.65 && temp > 0.4 {
                 row.push(Cell {
-                    cell_type: CellType::Sand(altitude as f32 - 0.56),
+                    cell_type: CellType::Sand,
+                    relative_altitude: altitude - 0.56,
+                    altitude: altitude,
                 });
             } else if altitude > 0.56 && temp > 0.3 {
                 row.push(Cell {
-                    cell_type: CellType::ShallowWater(altitude as f32 - 0.56),
+                    cell_type: CellType::ShallowWater,
+                    relative_altitude: altitude - 0.56,
+                    altitude: altitude,
                 });
             } else if altitude > 0.56 {
                 row.push(Cell {
-                    cell_type: CellType::Ice(altitude as f32 - 0.56),
+                    cell_type: CellType::Ice,
+                    relative_altitude: altitude - 0.56,
+                    altitude: altitude,
                 });
             } else if altitude > 0.52 {
                 row.push(Cell {
-                    cell_type: CellType::Water(altitude as f32 - 0.52),
+                    cell_type: CellType::Water,
+                    relative_altitude: altitude - 0.52,
+                    altitude: altitude,
                 });
             } else if altitude > 0.48 {
                 row.push(Cell {
-                    cell_type: CellType::MediumWater(altitude as f32 - 0.48),
+                    cell_type: CellType::MediumWater,
+                    relative_altitude: altitude - 0.48,
+                    altitude: altitude,
                 });
             } else {
                 row.push(Cell {
-                    cell_type: CellType::DeepWater(altitude as f32 - 0.0),
+                    cell_type: CellType::DeepWater,
+                    relative_altitude: altitude,
+                    altitude: altitude,
                 });
             }
         }
         world.push(row);
     }
+
+    generate_river(&mut world);
 
     println!("World generated in: {}s", time.elapsed().as_secs_f32());
 
@@ -276,10 +466,10 @@ fn generate_world_colors(map: &Vec<Vec<Cell>>) -> Vec<f32> {
     for y in 0..WORLD_HEIGTH as usize {
         for x in 0..WORLD_WIDTH as usize {
             let cell = &map[y][x];
-            let (r, g, b) = cell.cell_type.get_color();
-            colors.push(r);
-            colors.push(g);
-            colors.push(b);
+            let (r, g, b) = cell.get_color();
+            colors.push(r as f32);
+            colors.push(g as f32);
+            colors.push(b as f32);
             colors.push(255.0);
         }
     }
@@ -378,9 +568,17 @@ fn draw(shader_program: u32, camera: &Camera2D) {
 
         let size: f32 = 20.0;
 
-        gl::Uniform1f(camera_zoom_loc, camera.zoom);
-        gl::Uniform2f(camera_position_loc, camera.position.0, camera.position.1);
-        gl::Uniform2f(camera_offset_loc, camera.offset.0, camera.offset.1);
+        gl::Uniform1f(camera_zoom_loc, camera.zoom as f32);
+        gl::Uniform2f(
+            camera_position_loc,
+            camera.position.0 as f32,
+            camera.position.1 as f32,
+        );
+        gl::Uniform2f(
+            camera_offset_loc,
+            camera.offset.0 as f32,
+            camera.offset.1 as f32,
+        );
         gl::Uniform1f(size_loc, size);
         gl::Uniform1f(world_height_loc, WORLD_HEIGTH as f32);
         gl::Uniform1f(world_width_loc, WORLD_WIDTH as f32);
@@ -450,11 +648,11 @@ fn handle_input(sdl_context: &sdl3::Sdl, camera: &mut Camera2D) -> bool {
                 mouse_y,
                 ..
             } => {
-                let mouse_world_pos = camera.get_screen_to_world(mouse_x, mouse_y);
+                let mouse_world_pos = camera.get_screen_to_world(mouse_x as f64, mouse_y as f64);
 
-                camera.zoom = (camera.zoom.ln() + y * 0.1).exp().clamp(0.001, 20.0);
+                camera.zoom = (camera.zoom.ln() + y as f64 * 0.1).exp().clamp(0.01, 5.0);
 
-                let mouser_world_pos2 = camera.get_screen_to_world(mouse_x, mouse_y);
+                let mouser_world_pos2 = camera.get_screen_to_world(mouse_x as f64, mouse_y as f64);
 
                 camera.position = (
                     camera.position.0 + mouse_world_pos.0 - mouser_world_pos2.0,
@@ -468,8 +666,8 @@ fn handle_input(sdl_context: &sdl3::Sdl, camera: &mut Camera2D) -> bool {
                 ..
             } if mousestate.is_mouse_button_pressed(MouseButton::Left) => {
                 camera.position = (
-                    camera.position.0 - xrel / camera.zoom,
-                    camera.position.1 - yrel / camera.zoom,
+                    camera.position.0 - xrel as f64 / camera.zoom,
+                    camera.position.1 - yrel as f64 / camera.zoom,
                 );
             }
             _ => {}
@@ -504,7 +702,7 @@ pub fn main() {
     });
 
     let mut camera = Camera2D {
-        offset: (WINDOW_WIDTH as f32 / 2.0, WINDOW_HEIGHT as f32 / 2.0),
+        offset: (WINDOW_WIDTH as f64 / 2.0, WINDOW_HEIGHT as f64 / 2.0),
         position: (0.0, 0.0),
         rotation: 0.0,
         zoom: 1.0,
