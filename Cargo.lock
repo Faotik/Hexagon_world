@@ -21,16 +21,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
-name = "cc"
-version = "1.2.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "739eb0f94557554b3ca9a86d2d37bebd49c5e6d0c1d2bda35ba5bdac830befc2"
-dependencies = [
- "find-msvc-tools",
- "shlex",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -45,21 +35,6 @@ dependencies = [
  "rand 0.9.2",
  "sdl3",
 ]
-
-[[package]]
-name = "cmake"
-version = "0.1.54"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "find-msvc-tools"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52051878f80a721bb68ebfbc930e07b65ba72f2da88968ea5c06fd6ca3d3a127"
 
 [[package]]
 name = "getrandom"
@@ -145,6 +120,12 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "pkg-config"
+version = "0.3.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "ppv-lite86"
@@ -233,12 +214,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rpkg-config"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a2d2f3481209a6b42eec2fbb49063fb4e8d35b57023401495d4fe0f85c817f0"
-
-[[package]]
 name = "sdl3"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,34 +222,8 @@ dependencies = [
  "bitflags 2.10.0",
  "lazy_static",
  "libc",
- "sdl3-image-sys",
- "sdl3-sys",
- "sdl3-ttf-sys",
-]
-
-[[package]]
-name = "sdl3-image-src"
-version = "3.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4d0c6070f236297a8e7931cbe5f652e3f0e5a8a214b12984357bd4904874cc7"
-
-[[package]]
-name = "sdl3-image-sys"
-version = "0.2.0+SDL3-image-3.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d92bd93ce75ca9b027474f90c788daf3b5ced8410ee3c1dcb478a10030bf162"
-dependencies = [
- "cmake",
- "rpkg-config",
- "sdl3-image-src",
  "sdl3-sys",
 ]
-
-[[package]]
-name = "sdl3-src"
-version = "3.2.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "560203d4fd508d45068ceedf0a11e264665f2bc974f9b34919f8b7fabf860bfa"
 
 [[package]]
 name = "sdl3-sys"
@@ -282,35 +231,8 @@ version = "0.5.9+SDL3-3.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db1f57b04b1ff16bbab7837c0a5e06e3b78fccb410bc00920b9ee860f0f58251"
 dependencies = [
- "cc",
- "cmake",
- "rpkg-config",
- "sdl3-src",
+ "pkg-config",
 ]
-
-[[package]]
-name = "sdl3-ttf-src"
-version = "3.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28923d2ce72ff317d8eb7cec97ddfb8f351c330d7bcbf8c76e91332122c93b3"
-
-[[package]]
-name = "sdl3-ttf-sys"
-version = "0.2.0+SDL3-ttf-3.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d1d8477496fa2b081fb8f63cf8d0a9a9ba6a7a8f2a21b87e7d13d2ab6d73582"
-dependencies = [
- "cmake",
- "rpkg-config",
- "sdl3-sys",
- "sdl3-ttf-src",
-]
-
-[[package]]
-name = "shlex"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "syn"
